@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Meta -->
+    <title>SalesOS — AI Revenue Command Center</title>
+    <meta name="description" content="SalesOS is an AI-powered revenue command center for ALGO trading sales teams. Premium dark-mode interface with intelligent pipeline management." />
+    <meta name="theme-color" content="#06080f" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
+    <!-- Preconnect to Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Google Fonts: Inter + JetBrains Mono + Space Grotesk + Outfit -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* Critical inline styles — no FOUC */
+      html {
+        background-color: #06080f;
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #06080f;
+        color: rgba(255, 255, 255, 0.9);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+
+      /* Loading spinner */
+      #root:empty::after {
+        content: '';
+        display: block;
+        width: 32px;
+        height: 32px;
+        margin: calc(50vh - 16px) auto;
+        border: 2.5px solid rgba(255, 255, 255, 0.08);
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: loader-spin 0.7s linear infinite;
+      }
+
+      @keyframes loader-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+
+
+  </body>
+</html>

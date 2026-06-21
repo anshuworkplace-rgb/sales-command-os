@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { motion, AnimateSharedLayout } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Home, Zap, Columns3, Users, IndianRupee, Brain, Trophy, ChevronLeft, ChevronRight, Plus, LogOut, Settings, FileSpreadsheet, Target, HeartHandshake, Globe, BarChart3 } from 'lucide-react';
 import useUIStore from '../../stores/useUIStore';
 import useUserStore from '../../stores/useUserStore';

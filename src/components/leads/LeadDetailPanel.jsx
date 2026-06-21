@@ -207,6 +207,10 @@ export default function LeadDetailPanel() {
                   })()}
                   {lead.city && <span className="text-xs text-tx-ghost flex items-center gap-0.5 font-sans font-normal"><MapPin size={11} /> {lead.city}</span>}
                 </div>
+                <div className="text-[11px] font-mono text-tx-ghost flex items-center gap-1.5 mt-1.5">
+                  <Clock size={11} className="text-electric" />
+                  <span>Enquiry Date: <span className="text-tx-bright font-bold">{lead.created_at ? formatDate(lead.created_at) : '—'}</span></span>
+                </div>
               </div>
 
               {/* Action Toolbar */}

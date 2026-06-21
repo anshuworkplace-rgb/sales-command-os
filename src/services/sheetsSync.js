@@ -72,12 +72,6 @@ export function formatPhoneDisplay(phone) {
 export function isDateHeaderRow(row) {
   if (!row || !Array.isArray(row)) return false;
 
-  // Check each cell for a date pattern
-  const datePatterns = [
-    /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/, // 28-05-2026, 28/05/26
-    /^\d{2,4}[-/.]\d{1,2}[-/.]\d{1,2}$/, // 2026-05-28
-  ];
-
   // Count non-empty cells
   const nonEmpty = row.filter(cell => cell && String(cell).trim()).length;
 
@@ -85,8 +79,16 @@ export function isDateHeaderRow(row) {
   if (nonEmpty > 2) return false;
 
   return row.some(cell => {
-    const val = String(cell || '').trim();
-    return datePatterns.some(p => p.test(val));
+    if (!cell) return false;
+    if (cell instanceof Date) return true;
+    const val = String(cell).trim();
+    const datePatterns = [
+      /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/, // 28-05-2026, 28/05/26
+      /^\d{2,4}[-/.]\d{1,2}[-/.]\d{1,2}$/, // 2026-05-28
+    ];
+    if (datePatterns.some(p => p.test(val))) return true;
+    if (val.includes('T') && !isNaN(Date.parse(val))) return true;
+    return false;
   });
 }
 
@@ -96,11 +98,29 @@ export function isDateHeaderRow(row) {
 export function extractDateFromHeader(row) {
   if (!row) return null;
   for (const cell of row) {
-    const val = String(cell || '').trim();
+    if (!cell) continue;
+    if (cell instanceof Date) return cell;
+
+    const val = String(cell).trim();
+    if (!val) continue;
+
+    // ISO string
+    if (val.includes('T') && !isNaN(Date.parse(val))) {
+      return new Date(val);
+    }
+
     // Try DD-MM-YYYY
     const match = val.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
     if (match) {
       const [, d, m, y] = match;
+      const year = y.length === 2 ? `20${y}` : y;
+      return new Date(`${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+    }
+
+    // Try YYYY-MM-DD
+    const matchISO = val.match(/^(\d{2,4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (matchISO) {
+      const [, y, m, d] = matchISO;
       const year = y.length === 2 ? `20${y}` : y;
       return new Date(`${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
     }
@@ -375,6 +395,21 @@ export function diffAndSync(sheetRows, dbLeads) {
           hasChanges = true;
         }
       });
+
+      // Sync created_at if sheet date context is different from database created_at
+      if (sheetLead.created_context_date) {
+        const sheetDate = new Date(sheetLead.created_context_date);
+        const dbDate = existing.created_at ? new Date(existing.created_at) : null;
+        
+        if (!dbDate || 
+            sheetDate.getUTCFullYear() !== dbDate.getUTCFullYear() ||
+            sheetDate.getUTCMonth() !== dbDate.getUTCMonth() ||
+            sheetDate.getUTCDate() !== dbDate.getUTCDate()) {
+          
+          changes.created_at = sheetLead.created_context_date;
+          hasChanges = true;
+        }
+      }
 
       // Special: sheet color override for status (if color is set and maps to a known status)
       if (sheetLead.sheet_color && sheetLead.status !== 'fresh_enquiry') {

@@ -55,6 +55,10 @@ function onEdit(e) {
     
     // Get the full row data
     const rowData = sheet.getRange(row, 1, 1, 6).getValues()[0];
+    
+    // Skip if this is a date separator row
+    if (isDateRow(rowData)) return;
+    
     const name = String(rowData[COL.NAME] || '').trim();
     const phone = normalizePhone(String(rowData[COL.PHONE] || ''));
     
@@ -67,6 +71,9 @@ function onEdit(e) {
     
     // Parse capital
     const capitalNumeric = parseCapitalToNumber(String(rowData[COL.CAPITAL] || ''));
+    
+    // Scan upwards to find nearest date header above this row
+    const dateContext = findDateHeaderAbove(sheet, row);
     
     // Build lead data
     const leadData = {
@@ -85,6 +92,10 @@ function onEdit(e) {
       synced_from_sheet: true,
       last_sheet_sync_at: new Date().toISOString(),
     };
+    
+    if (dateContext) {
+      leadData.created_at = dateContext;
+    }
     
     if (ASSIGNED_USER_ID) {
       leadData.assigned_to = ASSIGNED_USER_ID;
@@ -147,19 +158,21 @@ function syncAllRows() {
   const backgrounds = sheet.getRange(2, 1, lastRow - 1, 1).getBackgrounds();
   
   let synced = 0, skipped = 0, errors = 0;
+  let currentDateContext = null;
   
   allData.forEach(function(rowData, idx) {
-    const name = String(rowData[COL.NAME] || '').trim();
-    const phone = normalizePhone(String(rowData[COL.PHONE] || ''));
-    
-    // Skip empty rows and date headers
-    if (!name || !phone || phone.length < 7) {
+    // 1. Check if it is a date row and update context
+    if (isDateRow(rowData)) {
+      currentDateContext = extractDateFromRow(rowData);
       skipped++;
       return;
     }
+
+    const name = String(rowData[COL.NAME] || '').trim();
+    const phone = normalizePhone(String(rowData[COL.PHONE] || ''));
     
-    // Skip date separator rows
-    if (isDateRow(rowData)) {
+    // Skip empty rows
+    if (!name || !phone || phone.length < 7) {
       skipped++;
       return;
     }
@@ -184,6 +197,10 @@ function syncAllRows() {
       synced_from_sheet: true,
       last_sheet_sync_at: new Date().toISOString(),
     };
+    
+    if (currentDateContext) {
+      leadData.created_at = currentDateContext;
+    }
     
     if (ASSIGNED_USER_ID) {
       leadData.assigned_to = ASSIGNED_USER_ID;
@@ -456,17 +473,78 @@ function parseCapitalToNumber(raw) {
 function isDateRow(rowData) {
   var nonEmpty = 0;
   var hasDate = false;
-  var datePattern = /^\\d{1,2}[-\\/.]+\\d{1,2}[-\\/.]+\\d{2,4}$/;
   
   rowData.forEach(function(cell) {
-    var val = String(cell || '').trim();
+    if (!cell) return;
+    if (cell instanceof Date) {
+      nonEmpty++;
+      hasDate = true;
+      return;
+    }
+    var val = String(cell).trim();
     if (val) {
       nonEmpty++;
-      if (datePattern.test(val)) hasDate = true;
+      var datePattern = /^\\d{1,2}[-\\/.]+\\d{1,2}[-\\/.]+\\d{2,4}$/;
+      var datePattern2 = /^\\d{2,4}[-\\/.]+\\d{1,2}[-\\/.]+\\d{1,2}$/;
+      if (datePattern.test(val) || datePattern2.test(val)) {
+        hasDate = true;
+      } else if (val.indexOf('T') !== -1 && !isNaN(Date.parse(val))) {
+        hasDate = true;
+      }
     }
   });
   
   return hasDate && nonEmpty <= 2;
+}
+
+function extractDateFromRow(rowData) {
+  for (var i = 0; i < rowData.length; i++) {
+    var cell = rowData[i];
+    if (!cell) continue;
+    if (cell instanceof Date) {
+      return cell.toISOString();
+    }
+    var val = String(cell).trim();
+    if (!val) continue;
+
+    if (val.indexOf('T') !== -1 && !isNaN(Date.parse(val))) {
+      return new Date(val).toISOString();
+    }
+
+    var match = val.match(/^(\\d{1,2})[-\\/.]+(\\d{1,2})[-\\/.]+(\\d{2,4})$/);
+    if (match) {
+      var d = match[1];
+      var m = match[2];
+      var y = match[3];
+      var year = y.length === 2 ? '20' + y : y;
+      if (d.length === 1) d = '0' + d;
+      if (m.length === 1) m = '0' + m;
+      return year + '-' + m + '-' + d + 'T00:00:00.000Z';
+    }
+
+    var matchISO = val.match(/^(\\d{2,4})[-\\/.]+(\\d{1,2})[-\\/.]+(\\d{1,2})$/);
+    if (matchISO) {
+      var y = matchISO[1];
+      var m = matchISO[2];
+      var d = matchISO[3];
+      var year = y.length === 2 ? '20' + y : y;
+      if (d.length === 1) d = '0' + d;
+      if (m.length === 1) m = '0' + m;
+      return year + '-' + m + '-' + d + 'T00:00:00.000Z';
+    }
+  }
+  return null;
+}
+
+function findDateHeaderAbove(sheet, startRow) {
+  for (var r = startRow - 1; r >= 2; r--) {
+    var rowData = sheet.getRange(r, 1, 1, 6).getValues()[0];
+    if (isDateRow(rowData)) {
+      var dateStr = extractDateFromRow(rowData);
+      if (dateStr) return dateStr;
+    }
+  }
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════

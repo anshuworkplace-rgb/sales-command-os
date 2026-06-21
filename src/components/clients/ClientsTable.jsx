@@ -113,7 +113,7 @@ export default function ClientsTable() {
         }
 
         // Special sorting for dates
-        if (column === 'next_follow_up') {
+        if (column === 'next_follow_up' || column === 'created_at') {
           if (!av && !bv) continue;
           if (!av) return 1;
           if (!bv) return -1;
@@ -384,6 +384,7 @@ export default function ClientsTable() {
                   { key: 'name', label: 'Name' },
                   { key: 'status', label: 'Stage' },
                   { key: 'city', label: 'City' },
+                  { key: 'created_at', label: 'Enquiry Date' },
                   { key: 'next_follow_up', label: 'Follow-up' },
                   ...(isM ? [{ key: 'assigned_to', label: 'Rep' }] : []),
                   { key: 'revenue', label: 'Value' },
@@ -554,6 +555,14 @@ export default function ClientsTable() {
                               <span>{lead.city || '-'}</span>
                             </div>
                           )}
+                        </td>
+
+                        {/* Enquiry Date cell */}
+                        <td className="px-4 py-3 text-[11px] whitespace-nowrap text-tx-dim">
+                          <span className="flex items-center gap-1.5">
+                            <Clock size={11} className="text-tx-ghost" />
+                            <span>{lead.created_at ? formatDate(lead.created_at).split(',')[0] : '—'}</span>
+                          </span>
                         </td>
 
                         {/* Follow-up cell (Static date visualizer) */}

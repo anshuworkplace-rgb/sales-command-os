@@ -963,3 +963,54 @@ a {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* -- LEAD DRAWER REDESIGN -- */
+.chiclet-btn {
+  @apply py-2 px-3 rounded-lg text-[11px] font-bold transition-all;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-ghost);
+  border: 1px solid var(--border-subtle);
+}
+.chiclet-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+}
+.chiclet-btn.ghost {
+  background: transparent;
+  border-style: dashed;
+}
+
+.disp-btn {
+  @apply py-1.5 px-2 rounded-md text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all w-full;
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-subtle);
+}
+.disp-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+.disp-btn.positive {
+  background: rgba(16, 185, 129, 0.05);
+  color: var(--accent-emerald);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+.disp-btn.positive:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.active-red {
+  background: rgba(244, 63, 94, 0.1) !important;
+  color: var(--accent-rose) !important;
+  border-color: rgba(244, 63, 94, 0.3) !important;
+}
+.active-amber {
+  background: rgba(245, 158, 11, 0.1) !important;
+  color: var(--accent-amber) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+.active-green {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: var(--accent-emerald) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+}

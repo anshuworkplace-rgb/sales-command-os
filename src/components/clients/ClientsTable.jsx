@@ -18,7 +18,11 @@ import {
   MoreHorizontal,
   Sparkles,
   AlertTriangle,
-  UserCheck
+  UserCheck,
+  Clock,
+  Activity,
+  Zap,
+  ShieldAlert
 } from 'lucide-react';
 import useLeadStore from '../../stores/useLeadStore';
 import useUIStore from '../../stores/useUIStore';
@@ -61,6 +65,7 @@ export default function ClientsTable() {
   const [localSearch, setLocalSearch] = useState(searchQuery || '');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedLeads, setSelectedLeads] = useState([]);
+  const [agingFilter, setAgingFilter] = useState('all');
   
   // Inline edit state
   const [editingCell, setEditingCell] = useState(null); // { id, field }
@@ -72,6 +77,49 @@ export default function ClientsTable() {
 
   // Optimistic lock conflict state
   const [conflict, setConflict] = useState(null);
+
+  // SLA Stats calculation
+  const slaStats = useMemo(() => {
+    const now = new Date();
+    const myLeads = isM && viewFilter === 'all' ? leads : leads.filter(l => l.assigned_to === user?.id);
+    const freshLeads = myLeads.filter(l => ['new', 'fresh_enquiry'].includes(l.status));
+    
+    // SLA Violations: status is fresh and enquiry_date is older than 15 mins
+    const violations = freshLeads.filter(l => {
+      const enq = new Date(l.enquiry_date || l.created_at);
+      return (now - enq) / 60000 > 15;
+    });
+
+    // SLA Urgent: fresh and enquiry_date is less than 15 mins ago
+    const urgent = freshLeads.filter(l => {
+      const enq = new Date(l.enquiry_date || l.created_at);
+      return (now - enq) / 60000 <= 15;
+    });
+
+    // Touched leads for average response time
+    const touchedLeads = myLeads.filter(l => l.first_contact_at && (l.enquiry_date || l.created_at));
+    const responseTimes = touchedLeads.map(l => {
+      const start = new Date(l.enquiry_date || l.created_at);
+      const end = new Date(l.first_contact_at);
+      return (end - start) / 60000; // in minutes
+    });
+    
+    const avgResponseTime = responseTimes.length > 0
+      ? Math.round(responseTimes.reduce((sum, val) => sum + val, 0) / responseTimes.length)
+      : 0;
+
+    const withinSLA = responseTimes.filter(t => t <= 15).length;
+    const slaSuccessRate = responseTimes.length > 0
+      ? Math.round((withinSLA / responseTimes.length) * 100)
+      : 100; // default
+
+    return {
+      violationsCount: violations.length,
+      urgentCount: urgent.length,
+      avgResponseTime,
+      slaSuccessRate
+    };
+  }, [leads, isM, viewFilter, user]);
 
   // Set up the conflict handler
   useEffect(() => {
@@ -95,6 +143,33 @@ export default function ClientsTable() {
     }
     if (stageFilter !== 'all') data = data.filter(l => l.status === stageFilter);
     
+    // Dynamic Lead Aging Filters
+    if (agingFilter !== 'all') {
+      const now = new Date();
+      data = data.filter(l => {
+        const enq = new Date(l.enquiry_date || l.created_at);
+        const diffMins = (now - enq) / 60000;
+        const diffHours = diffMins / 60;
+        
+        switch (agingFilter) {
+          case 'sla_urgent':
+            return ['new', 'fresh_enquiry'].includes(l.status) && diffMins <= 15;
+          case 'hot_2h':
+            return ['new', 'fresh_enquiry'].includes(l.status) && diffHours <= 2;
+          case 'today':
+            const enqDateStr = enq.toISOString().split('T')[0];
+            const todayStr = now.toISOString().split('T')[0];
+            return enqDateStr === todayStr;
+          case 'cold_48h':
+            return ['new', 'fresh_enquiry'].includes(l.status) && diffHours > 48;
+          case 'overdue':
+            return l.next_follow_up && new Date(l.next_follow_up) < now && !['converted', 'deployed', 'lost'].includes(l.status);
+          default:
+            return true;
+        }
+      });
+    }
+
     // Multi-sort logic
     data = [...data].sort((a, b) => {
       for (const sortObj of multiSort) {
@@ -113,7 +188,7 @@ export default function ClientsTable() {
         }
 
         // Special sorting for dates
-        if (column === 'next_follow_up' || column === 'created_at') {
+        if (column === 'next_follow_up' || column === 'created_at' || column === 'enquiry_date') {
           if (!av && !bv) continue;
           if (!av) return 1;
           if (!bv) return -1;
@@ -133,11 +208,11 @@ export default function ClientsTable() {
         }
       }
       // Stable sort fallback
-      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      return new Date(b.enquiry_date || b.created_at || 0) - new Date(a.enquiry_date || a.created_at || 0);
     });
 
     return data;
-  }, [leads, isM, viewFilter, user, localSearch, stageFilter, multiSort]);
+  }, [leads, isM, viewFilter, user, localSearch, stageFilter, agingFilter, multiSort]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginatedData = useMemo(() => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE), [filtered, currentPage]);
@@ -169,7 +244,7 @@ export default function ClientsTable() {
     }
 
     if (nextSort.length === 0) {
-      nextSort = [{ column: 'created_at', direction: 'desc' }];
+      nextSort = [{ column: 'enquiry_date', direction: 'desc' }];
     }
     setMultiSort(nextSort);
   };
@@ -263,6 +338,61 @@ export default function ClientsTable() {
 
   return (
     <div className="p-5 lg:p-6 space-y-4 max-w-7xl mx-auto relative pb-20">
+      {/* SLA & Aging Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+        <div className="glass-card p-4 flex flex-col justify-between border-white/[0.05] relative overflow-hidden bg-void shadow-glow-blue/2">
+          <div className="flex justify-between items-start text-tx-ghost">
+            <span className="text-[10px] uppercase font-black tracking-wider">Active SLA Violations</span>
+            <ShieldAlert size={14} className={slaStats.violationsCount > 0 ? "text-coral animate-pulse" : "text-tx-ghost"} />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className={`text-2xl font-black font-mono ${slaStats.violationsCount > 0 ? "text-coral text-glow-coral" : "text-tx-bright"}`}>
+              {slaStats.violationsCount}
+            </span>
+            <span className="text-[10px] text-tx-ghost">leads (&gt;15m untouched)</span>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 flex flex-col justify-between border-white/[0.05] relative overflow-hidden bg-void">
+          <div className="flex justify-between items-start text-tx-ghost">
+            <span className="text-[10px] uppercase font-black tracking-wider">SLA Response Rate</span>
+            <Activity size={14} className="text-mint" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className={`text-2xl font-black font-mono ${slaStats.slaSuccessRate < 80 ? "text-coral" : "text-mint"}`}>
+              {slaStats.slaSuccessRate}%
+            </span>
+            <span className="text-[10px] text-tx-ghost">within 15m threshold</span>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 flex flex-col justify-between border-white/[0.05] relative overflow-hidden bg-void">
+          <div className="flex justify-between items-start text-tx-ghost">
+            <span className="text-[10px] uppercase font-black tracking-wider">Avg Response SLA</span>
+            <Clock size={14} className="text-electric" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-black font-mono text-electric text-glow-electric">
+              {slaStats.avgResponseTime}m
+            </span>
+            <span className="text-[10px] text-tx-ghost">average touch time</span>
+          </div>
+        </div>
+
+        <div className="glass-card p-4 flex flex-col justify-between border-white/[0.05] relative overflow-hidden bg-void">
+          <div className="flex justify-between items-start text-tx-ghost">
+            <span className="text-[10px] uppercase font-black tracking-wider">SLA Urgent Leads</span>
+            <Zap size={14} className={slaStats.urgentCount > 0 ? "text-amber-400 animate-bounce" : "text-tx-ghost"} />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className={`text-2xl font-black font-mono ${slaStats.urgentCount > 0 ? "text-amber-400 animate-pulse" : "text-tx-bright"}`}>
+              {slaStats.urgentCount}
+            </span>
+            <span className="text-[10px] text-tx-ghost">fresh (&lt;15m old)</span>
+          </div>
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap bg-white/[0.02] p-3 rounded-2xl border border-white/[0.05]">
         <div className="flex items-center gap-2 flex-1 max-w-md">
@@ -287,6 +417,23 @@ export default function ClientsTable() {
           >
             <option value="all" className="bg-[#0b0f19]">All Stages</option>
             {STAGE_ORDER.map(s => <option key={s} value={s} className="bg-[#0b0f19]">{STAGE_LABELS[s]}</option>)}
+          </select>
+        </div>
+
+        {/* Lead Aging Filter */}
+        <div className="flex items-center gap-2 bg-void border border-white/[0.06] rounded-xl px-2 py-1 select-none">
+          <Clock size={14} className="text-tx-ghost ml-1" />
+          <select
+            value={agingFilter}
+            onChange={e => { setAgingFilter(e.target.value); setCurrentPage(1); }}
+            className="bg-transparent border-none text-[12px] text-tx-bright outline-none cursor-pointer py-1 pr-2 font-bold"
+          >
+            <option value="all" className="bg-[#0b0f19]">All Lead Ages</option>
+            <option value="sla_urgent" className="bg-[#0b0f19] text-coral font-bold">⚠️ SLA Urgent (&lt;15m)</option>
+            <option value="hot_2h" className="bg-[#0b0f19] text-amber-400">🔥 Hot Leads (&lt;2h)</option>
+            <option value="today" className="bg-[#0b0f19] text-electric">📅 Received Today</option>
+            <option value="cold_48h" className="bg-[#0b0f19] text-tx-muted">❄️ Cold Leads (&gt;48h)</option>
+            <option value="overdue" className="bg-[#0b0f19] text-coral font-black">🚨 Overdue Follow-up</option>
           </select>
         </div>
 
@@ -351,7 +498,7 @@ export default function ClientsTable() {
               <button 
                 onClick={() => {
                   const updated = multiSort.filter(s => s.column !== sort.column);
-                  setMultiSort(updated.length > 0 ? updated : [{ column: 'created_at', direction: 'desc' }]);
+                  setMultiSort(updated.length > 0 ? updated : [{ column: 'enquiry_date', direction: 'desc' }]);
                 }}
                 className="text-coral hover:text-red-400 ml-1 font-black"
                 title="Remove this sorting rule"
@@ -361,7 +508,7 @@ export default function ClientsTable() {
             </div>
           ))}
           {multiSort.length > 1 && (
-            <button onClick={() => setMultiSort([{ column: 'created_at', direction: 'desc' }])} className="text-electric hover:underline font-bold ml-1 cursor-pointer">
+            <button onClick={() => setMultiSort([{ column: 'enquiry_date', direction: 'desc' }])} className="text-electric hover:underline font-bold ml-1 cursor-pointer">
               Reset Sorting Rules
             </button>
           )}
@@ -384,7 +531,7 @@ export default function ClientsTable() {
                   { key: 'name', label: 'Name' },
                   { key: 'status', label: 'Stage' },
                   { key: 'city', label: 'City' },
-                  { key: 'created_at', label: 'Enquiry Date' },
+                  { key: 'enquiry_date', label: 'Enquiry Date' },
                   { key: 'next_follow_up', label: 'Follow-up' },
                   ...(isM ? [{ key: 'assigned_to', label: 'Rep' }] : []),
                   { key: 'revenue', label: 'Value' },
@@ -440,6 +587,30 @@ export default function ClientsTable() {
                     const now = new Date();
                     const isOverdue = lead.next_follow_up && new Date(lead.next_follow_up) < now && !['converted', 'deployed', 'lost'].includes(lead.status);
                     const isSelected = selectedLeads.includes(lead.id);
+
+                    // SLA status check
+                    let slaPulsingDot = null;
+                    if (['new', 'fresh_enquiry'].includes(lead.status)) {
+                      const enq = new Date(lead.enquiry_date || lead.created_at);
+                      const diffMins = (now - enq) / 60000;
+                      if (diffMins > 15) {
+                        slaPulsingDot = (
+                          <span 
+                            className="inline-block w-2 h-2 rounded-full bg-coral animate-pulse flex-shrink-0"
+                            style={{ boxShadow: '0 0 8px #f43f5e' }}
+                            title={`SLA Violation: untouched for ${Math.round(diffMins)}m (>15m)`}
+                          />
+                        );
+                      } else {
+                        slaPulsingDot = (
+                          <span 
+                            className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0"
+                            style={{ boxShadow: '0 0 8px #fbbf24' }}
+                            title={`SLA Urgent: untouched for ${Math.round(diffMins)}m (<=15m)`}
+                          />
+                        );
+                      }
+                    }
 
                     return (
                       <motion.tr
@@ -513,7 +684,10 @@ export default function ClientsTable() {
                               className="bg-void border border-electric rounded px-1.5 py-0.5 text-xs text-tx-bright w-full font-bold outline-none"
                             />
                           ) : (
-                            lead.name || 'Unknown'
+                            <span className="flex items-center gap-1.5">
+                              {slaPulsingDot}
+                              <span>{lead.name || 'Unknown'}</span>
+                            </span>
                           )}
                         </td>
 
@@ -561,7 +735,7 @@ export default function ClientsTable() {
                         <td className="px-4 py-3 text-[11px] whitespace-nowrap text-tx-dim">
                           <span className="flex items-center gap-1.5">
                             <Clock size={11} className="text-tx-ghost" />
-                            <span>{lead.created_at ? formatDate(lead.created_at).split(',')[0] : '—'}</span>
+                            <span>{lead.enquiry_date || lead.created_at ? formatDate(lead.enquiry_date || lead.created_at).split(',')[0] : '—'}</span>
                           </span>
                         </td>
 

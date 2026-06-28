@@ -156,6 +156,14 @@ const useSheetsSyncStore = create((set, get) => ({
                 sheet_color: lead.sheet_color,
                 synced_from_sheet: true,
                 last_sheet_sync_at: new Date().toISOString(),
+                enquiry_date: lead.enquiry_date,
+                broker: lead.broker,
+                trading_experience: lead.trading_experience,
+                competitor: lead.competitor,
+                disposition: lead.disposition,
+                objections_logged: lead.objections_logged,
+                last_feedback: lead.last_feedback,
+                feedback_sentiment: lead.feedback_sentiment,
               };
 
               if (lead.created_context_date) {

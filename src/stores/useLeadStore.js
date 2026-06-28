@@ -3,6 +3,7 @@ import { leadService } from '../services/leadService';
 import useUserStore from './useUserStore';
 import useToastStore from './useToastStore';
 import { optimistic, optimisticAdd, optimisticDelete } from '../lib/optimistic';
+import { parseHinglishFeedback } from '../engines/hinglishParser';
 
 // ── Optimistic mutation wrappers (defined once, reused in store) ──
 
@@ -83,6 +84,40 @@ const useLeadStore = create((set, get) => ({
   // ── LEAD CRUD (optimistic) ──
 
   addLead: async (leadData) => {
+    // Enrich leadData with parsed feedback details if notes are present
+    if (leadData.notes) {
+      const parsed = parseHinglishFeedback(leadData.notes);
+      const broker = parsed.brokers.length > 0 ? parsed.brokers[0] : null;
+      const trading_experience = parsed.experience.length > 0 ? parsed.experience[0].key : null;
+      const competitor = parsed.competitors.length > 0 ? parsed.competitors[0].key : null;
+      const disposition = parsed.disposition ? parsed.disposition.key : null;
+      const objections_logged = parsed.objections.map(o => o.key);
+
+      let feedback_sentiment = 'neutral';
+      if (parsed.objections.length > 0) {
+        feedback_sentiment = 'objection';
+      } else if (['wrong_inquiry', 'not_interested', 'unreachable', 'no_whatsapp', 'npc'].includes(disposition)) {
+        feedback_sentiment = 'negative';
+      } else if (leadData.status === 'converted') {
+        feedback_sentiment = 'positive';
+      }
+
+      leadData = {
+        ...leadData,
+        broker,
+        trading_experience,
+        competitor,
+        disposition,
+        objections_logged,
+        last_feedback: leadData.notes,
+        feedback_sentiment
+      };
+    }
+
+    if (!leadData.enquiry_date) {
+      leadData.enquiry_date = new Date().toISOString();
+    }
+
     try {
       set({ isLoading: true });
       const result = await _addLead(set, get, leadData);
@@ -98,6 +133,37 @@ const useLeadStore = create((set, get) => ({
   updateLead: async (leadId, updates, forceVersion = null) => {
     const currentLead = get().leads.find((l) => l.id === leadId);
     const expectedVersion = forceVersion !== null ? forceVersion : (currentLead?.version || 1);
+    
+    // Enrich updates with parsed feedback details if notes are updated
+    if (updates.notes !== undefined && updates.notes !== null) {
+      const parsed = parseHinglishFeedback(updates.notes);
+      const broker = parsed.brokers.length > 0 ? parsed.brokers[0] : null;
+      const trading_experience = parsed.experience.length > 0 ? parsed.experience[0].key : null;
+      const competitor = parsed.competitors.length > 0 ? parsed.competitors[0].key : null;
+      const disposition = parsed.disposition ? parsed.disposition.key : null;
+      const objections_logged = parsed.objections.map(o => o.key);
+
+      let feedback_sentiment = 'neutral';
+      if (parsed.objections.length > 0) {
+        feedback_sentiment = 'objection';
+      } else if (['wrong_inquiry', 'not_interested', 'unreachable', 'no_whatsapp', 'npc'].includes(disposition)) {
+        feedback_sentiment = 'negative';
+      } else if (updates.status === 'converted' || currentLead?.status === 'converted') {
+        feedback_sentiment = 'positive';
+      }
+
+      updates = {
+        ...updates,
+        broker: broker || currentLead?.broker || null,
+        trading_experience: trading_experience || currentLead?.trading_experience || null,
+        competitor: competitor || currentLead?.competitor || null,
+        disposition: disposition || currentLead?.disposition || null,
+        objections_logged,
+        last_feedback: updates.notes,
+        feedback_sentiment
+      };
+    }
+
     try {
       await _updateLead(set, get, { id: leadId, updates, expectedVersion });
     } catch (error) {

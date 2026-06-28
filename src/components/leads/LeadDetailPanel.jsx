@@ -40,7 +40,7 @@ export default function LeadDetailPanel() {
   const [showLostReason, setShowLostReason] = useState(false);
   const [nextStepText, setNextStepText] = useState(lead?.next_step || '');
   const [isEditingMeta, setIsEditingMeta] = useState(false);
-  const [metaForm, setMetaForm] = useState({ city: '', capital: '', broker: '', trading_experience: '', age_group: '' });
+  const [metaForm, setMetaForm] = useState({ city: '', capital: '', broker: '', trading_experience: '', age_group: '', competitor: '' });
   const [selectedPlan, setSelectedPlan] = useState('monthly');
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function LeadDetailPanel() {
       setMetaForm({
         city: lead.city || '', capital: lead.capital || '',
         broker: lead.broker || '', trading_experience: lead.trading_experience || '',
-        age_group: lead.age_group || '',
+        age_group: lead.age_group || '', competitor: lead.competitor || '',
       });
     }
   }, [lead?.id]);
@@ -59,6 +59,48 @@ export default function LeadDetailPanel() {
     if (!lead) return null;
     return parseHinglishFeedback(lead.notes || '', lead.follow_up_note || '');
   }, [lead?.notes, lead?.follow_up_note]);
+
+  const ALL_OBJECTIONS = useMemo(() => [
+    { key: 'had_losses', label: 'Loss History' },
+    { key: 'too_expensive', label: 'Budget Concern' },
+    { key: 'no_time', label: 'No Time' },
+    { key: 'trust_issues', label: 'Trust / SEBI' },
+    { key: 'needs_proof', label: 'Wants Proof' },
+  ], []);
+
+  const BATTLECARDS = useMemo(() => ({
+    had_losses: { label: 'Loss History Solutions', text: 'We don\'t manage your money — you control everything. Our algo runs on YOUR demat, YOUR rules.', advice: 'Focus on transparency: explain that we do not take pool funds.' },
+    too_expensive: { label: 'Pricing & Budget Solutions', text: 'Start with our Starter plan at ₹4,999/mo. Even with 25K capital, option selling strategies can work.', advice: 'Highlight ROI and lower entry cost options.' },
+    no_time: { label: 'Time Management Solutions', text: 'That\'s exactly why algo works — it runs 24/7 automatically. Set it once, monitor from your phone.', advice: 'Stress automation: setting up takes just 15 minutes.' },
+    trust_issues: { label: 'Trust & Compliance Solutions', text: 'We are SEBI registered. No profit sharing, no account access. Software runs on your own broker.', advice: 'Reassure safety: we are SEBI compliant, no direct funds access.' },
+    needs_proof: { label: 'Performance Verification', text: 'We\'ll show you live results in the demo. Also sharing backtested performance reports.', advice: 'Send past PDF backtest reports or invite to screen share.' },
+  }), []);
+
+  const SENTIMENTS = useMemo(() => ({
+    positive: { label: 'Positive Mood', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', emoji: '🤩' },
+    objection: { label: 'Objections Active', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', emoji: '🤔' },
+    negative: { label: 'Negative Mood', color: 'text-coral bg-coral/10 border-coral/20', emoji: '😡' },
+    neutral: { label: 'Neutral Mood', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20', emoji: '😐' },
+  }), []);
+
+  const activeObjections = useMemo(() => {
+    if (!lead) return [];
+    const fromDb = Array.isArray(lead.objections_logged) ? lead.objections_logged : [];
+    const fromAi = aiDetection?.objections?.map(o => o.key) || [];
+    return Array.from(new Set([...fromDb, ...fromAi]));
+  }, [lead?.objections_logged, aiDetection?.objections]);
+
+  const toggleObjection = async (key) => {
+    if (!lead) return;
+    const current = Array.isArray(lead.objections_logged) ? lead.objections_logged : [];
+    let next;
+    if (current.includes(key)) {
+      next = current.filter(k => k !== key);
+    } else {
+      next = [...current, key];
+    }
+    await updateLead(lead.id, { objections_logged: next });
+  };
 
   if (!lead) return null;
 
@@ -77,7 +119,7 @@ export default function LeadDetailPanel() {
     await updateLead(lead.id, {
       city: metaForm.city, capital: metaForm.capital,
       broker: metaForm.broker || null, trading_experience: metaForm.trading_experience || null,
-      age_group: metaForm.age_group || null,
+      age_group: metaForm.age_group || null, competitor: metaForm.competitor || null,
     });
     setIsEditingMeta(false);
   };
@@ -209,7 +251,7 @@ export default function LeadDetailPanel() {
                 </div>
                 <div className="text-[11px] font-mono text-tx-ghost flex items-center gap-1.5 mt-1.5">
                   <Clock size={11} className="text-electric" />
-                  <span>Enquiry Date: <span className="text-tx-bright font-bold">{lead.created_at ? formatDate(lead.created_at) : '—'}</span></span>
+                  <span>Enquiry Date: <span className="text-tx-bright font-bold">{lead.enquiry_date || lead.created_at ? formatDate(lead.enquiry_date || lead.created_at) : '—'}</span></span>
                 </div>
               </div>
 
@@ -282,7 +324,7 @@ export default function LeadDetailPanel() {
                         <input type="text" value={metaForm.capital} onChange={e => setMetaForm({ ...metaForm, capital: e.target.value })} className="input-field text-xs" />
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[9px] uppercase tracking-wider text-tx-ghost mb-1">Broker</label>
                         <select value={metaForm.broker} onChange={e => setMetaForm({ ...metaForm, broker: e.target.value })} className="input-field text-xs">
@@ -290,6 +332,15 @@ export default function LeadDetailPanel() {
                           {BROKERS.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
                         </select>
                       </div>
+                      <div>
+                        <label className="block text-[9px] uppercase tracking-wider text-tx-ghost mb-1">Competitor</label>
+                        <select value={metaForm.competitor} onChange={e => setMetaForm({ ...metaForm, competitor: e.target.value })} className="input-field text-xs">
+                          <option value="">—</option>
+                          {COMPETITORS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[9px] uppercase tracking-wider text-tx-ghost mb-1">Experience</label>
                         <select value={metaForm.trading_experience} onChange={e => setMetaForm({ ...metaForm, trading_experience: e.target.value })} className="input-field text-xs">
@@ -328,39 +379,134 @@ export default function LeadDetailPanel() {
                 )}
               </div>
 
-              {/* HINGLISH FEEDBACK */}
-              {lead.notes && (
-                <div className="glass-card p-4 space-y-3" style={{ borderColor: 'rgba(139,92,246,0.15)' }}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-violet">
-                      <Sparkles size={13} />
-                      <span className="text-[11px] font-bold uppercase tracking-wider">AI Feedback Intel</span>
-                    </div>
-                    <span className="text-[9px] px-2 py-0.5 rounded bg-violet/10 text-violet font-bold uppercase">Active</span>
+              {/* TRADER PROFILE & INTEL */}
+              <div className="glass-card p-4 space-y-4" style={{ borderColor: 'rgba(139,92,246,0.15)', background: 'linear-gradient(to bottom, rgba(139,92,246,0.03), transparent)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-violet">
+                    <Sparkles size={13} className="animate-pulse" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider">Trader Profile & Intel</span>
                   </div>
-                  <div className="p-3 bg-white/[0.02] border border-white/[0.03] rounded-xl text-xs text-tx-dim italic">"{lead.notes}"</div>
-                  {aiDetection?.hasSuggestions && (
-                    <div className="space-y-2.5 pt-1 border-t border-white/[0.03]">
-                      <div className="flex flex-wrap gap-1.5">
-                        {aiDetection.brokers.length > 0 && <span className="px-2 py-0.5 bg-sky/10 text-sky border border-sky/20 rounded-md text-[10px] font-semibold">🏦 {aiDetection.brokers.join(', ')}</span>}
-                        {aiDetection.capital && <span className="px-2 py-0.5 bg-mint/10 text-mint border border-mint/20 rounded-md text-[10px] font-semibold">💰 {aiDetection.capital.formatted}</span>}
-                        {aiDetection.competitors.length > 0 && <span className="px-2 py-0.5 bg-coral/10 text-coral border border-coral/20 rounded-md text-[10px] font-semibold">⚔️ {aiDetection.competitors.map(c => c.label).join(', ')}</span>}
-                      </div>
-                      {aiDetection.objections.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-[10px] uppercase font-bold text-gold tracking-wider flex items-center gap-1"><ShieldAlert size={11} /> Battlecards</div>
-                          {aiDetection.objections.map(obj => (
-                            <div key={obj.key} className="bg-gold/[0.03] border border-gold/20 rounded-xl p-3 space-y-1">
-                              <div className="text-[11px] font-bold text-gold">🛡️ {obj.label}</div>
-                              <div className="text-[10px] text-tx-dim leading-relaxed">{obj.battlecard}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {(() => {
+                    const sentimentKey = lead.feedback_sentiment || (activeObjections.length > 0 ? 'objection' : 'neutral');
+                    const sentiment = SENTIMENTS[sentimentKey] || SENTIMENTS.neutral;
+                    return (
+                      <span className={`text-[9px] px-2.5 py-0.5 rounded-full border font-bold uppercase flex items-center gap-1 ${sentiment.color}`}>
+                        <span>{sentiment.emoji}</span>
+                        <span>{sentiment.label}</span>
+                      </span>
+                    );
+                  })()}
                 </div>
-              )}
+
+                {/* Info Grid */}
+                <div className="grid grid-cols-2 gap-2 text-[11px] font-sans">
+                  <div className="p-2 bg-white/[0.01] border border-white/[0.03] rounded-lg">
+                    <span className="text-[9px] text-tx-ghost uppercase font-bold tracking-wider block mb-0.5">Capital Range</span>
+                    <span className="text-tx-bright font-semibold">
+                      {lead.capital || (aiDetection?.capital?.formatted ? `${aiDetection.capital.formatted} (AI)` : '—')}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-white/[0.01] border border-white/[0.03] rounded-lg">
+                    <span className="text-[9px] text-tx-ghost uppercase font-bold tracking-wider block mb-0.5">Broker Used</span>
+                    <span className="text-tx-bright font-semibold">
+                      {(() => {
+                        const val = lead.broker || (aiDetection?.brokers?.length > 0 ? aiDetection.brokers[0] : null);
+                        return BROKERS.find(b => b.value === val)?.label || val || '—';
+                      })()}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-white/[0.01] border border-white/[0.03] rounded-lg">
+                    <span className="text-[9px] text-tx-ghost uppercase font-bold tracking-wider block mb-0.5">Trading Experience</span>
+                    <span className="text-tx-bright font-semibold">
+                      {(() => {
+                        const val = lead.trading_experience || (aiDetection?.experience?.length > 0 ? aiDetection.experience[0].key : null);
+                        return TRADING_EXPERIENCE.find(te => te.value === val)?.label || val || '—';
+                      })()}
+                    </span>
+                  </div>
+                  <div className="p-2 bg-white/[0.01] border border-white/[0.03] rounded-lg">
+                    <span className="text-[9px] text-tx-ghost uppercase font-bold tracking-wider block mb-0.5">Current Competitor</span>
+                    <span className="text-tx-bright font-semibold">
+                      {(() => {
+                        const val = lead.competitor || (aiDetection?.competitors?.length > 0 ? aiDetection.competitors[0].key : null);
+                        return COMPETITORS.find(c => c.value === val)?.label || val || '—';
+                      })()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Raw notes block */}
+                {lead.notes && (
+                  <div className="p-2.5 bg-black/40 border border-white/[0.03] rounded-xl text-xs text-tx-dim italic">
+                    "{lead.notes}"
+                  </div>
+                )}
+
+                {/* Interactive Objection Chips */}
+                <div className="space-y-2 pt-2 border-t border-white/[0.04]">
+                  <span className="text-[10px] text-tx-ghost uppercase font-bold tracking-wider block">Objections Raised (Interactive)</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_OBJECTIONS.map(obj => {
+                      const isActive = activeObjections.includes(obj.key);
+                      return (
+                        <button
+                          key={obj.key}
+                          type="button"
+                          onClick={() => toggleObjection(obj.key)}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all active:scale-95 ${
+                            isActive
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 font-black shadow-[0_0_8px_rgba(245,158,11,0.15)]'
+                              : 'bg-white/[0.01] text-tx-ghost border-white/[0.05] hover:bg-white/[0.03]'
+                          }`}
+                        >
+                          {isActive ? '✓ ' : ''}{obj.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Contextual Battlecards list */}
+                <div className="space-y-2 pt-2">
+                  <div className="text-[10px] uppercase font-bold text-gold tracking-wider flex items-center gap-1">
+                    <ShieldAlert size={11} className="text-amber-400" />
+                    <span>Contextual Battlecards</span>
+                  </div>
+                  
+                  <AnimatePresence mode="popLayout">
+                    {activeObjections.length > 0 ? (
+                      activeObjections.map(key => {
+                        const card = BATTLECARDS[key];
+                        if (!card) return null;
+                        return (
+                          <motion.div
+                            key={key}
+                            initial={{ opacity: 0, height: 0, y: -10 }}
+                            animate={{ opacity: 1, height: 'auto', y: 0 }}
+                            exit={{ opacity: 0, height: 0, y: -10 }}
+                            className="bg-amber-500/[0.02] border border-amber-500/20 rounded-xl p-3 space-y-1.5 overflow-hidden"
+                          >
+                            <div className="text-[11px] font-bold text-amber-400 flex items-center justify-between">
+                              <span>🛡️ {card.label}</span>
+                              <span className="text-[8px] bg-amber-500/10 text-amber-400/80 px-1.5 py-0.5 rounded uppercase">Script Active</span>
+                            </div>
+                            <div className="text-[11px] text-tx-bright font-medium leading-relaxed bg-black/30 p-2 rounded-lg border border-white/[0.02]">
+                              "{card.text}"
+                            </div>
+                            <div className="text-[9px] text-tx-ghost italic">
+                              💡 Advice: {card.advice}
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[10px] text-tx-ghost italic text-center py-4 bg-white/[0.01] border border-dashed border-white/[0.05] rounded-xl">
+                        No objections active. Pitch the benefits of automated execution!
+                      </div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
 
               {/* NEXT ACTION */}
               <div className="glass-card-flat p-4 space-y-3">

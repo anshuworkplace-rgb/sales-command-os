@@ -18,6 +18,8 @@
  *   Purple      → google meet / long conversation done
  */
 
+import { parseHinglishFeedback } from '../engines/hinglishParser';
+
 // ═══════════════════════════════════════════════════════
 // PHONE NORMALIZATION
 // ═══════════════════════════════════════════════════════
@@ -312,6 +314,25 @@ export function parseSheetRow(row, rowIndex, sheetTab = 'web_lead', bgColor = nu
   const capital = parseCapital(colE);
   const statusFromColor = bgColor ? mapColorToStatus(bgColor) : null;
 
+  // Run Hinglish notes parser to extract structured trader data
+  const feedbackText = colF || '';
+  const parsedFeedback = parseHinglishFeedback(feedbackText);
+  
+  const broker = parsedFeedback.brokers.length > 0 ? parsedFeedback.brokers[0] : null;
+  const trading_experience = parsedFeedback.experience.length > 0 ? parsedFeedback.experience[0].key : null;
+  const competitor = parsedFeedback.competitors.length > 0 ? parsedFeedback.competitors[0].key : null;
+  const disposition = parsedFeedback.disposition ? parsedFeedback.disposition.key : null;
+  const objections_logged = parsedFeedback.objections.map(o => o.key);
+
+  let feedback_sentiment = 'neutral';
+  if (parsedFeedback.objections.length > 0) {
+    feedback_sentiment = 'objection';
+  } else if (['wrong_inquiry', 'not_interested', 'unreachable', 'no_whatsapp', 'npc'].includes(disposition)) {
+    feedback_sentiment = 'negative';
+  } else if (statusFromColor === 'converted') {
+    feedback_sentiment = 'positive';
+  }
+
   return {
     name,
     phone,
@@ -328,6 +349,14 @@ export function parseSheetRow(row, rowIndex, sheetTab = 'web_lead', bgColor = nu
     status: statusFromColor || 'fresh_enquiry',
     synced_from_sheet: true,
     created_context_date: dateContext ? dateContext.toISOString() : null,
+    enquiry_date: dateContext ? dateContext.toISOString() : null,
+    broker,
+    trading_experience,
+    competitor,
+    disposition,
+    objections_logged,
+    last_feedback: colF || null,
+    feedback_sentiment
   };
 }
 
@@ -386,15 +415,30 @@ export function diffAndSync(sheetRows, dbLeads) {
       let hasChanges = false;
 
       // Only update fields that are non-empty in sheet and different from DB
-      const fieldsToCompare = ['name', 'city', 'capital', 'notes', 'status'];
+      const fieldsToCompare = [
+        'name', 'city', 'capital', 'notes', 'status',
+        'broker', 'trading_experience', 'competitor', 'disposition',
+        'last_feedback', 'feedback_sentiment'
+      ];
+      
       fieldsToCompare.forEach(field => {
         const sheetVal = sheetLead[field];
         const dbVal = existing[field];
-        if (sheetVal && sheetVal !== dbVal) {
+        if (sheetVal !== undefined && sheetVal !== null && sheetVal !== dbVal) {
           changes[field] = sheetVal;
           hasChanges = true;
         }
       });
+
+      // Special comparison for objections_logged array
+      if (sheetLead.objections_logged) {
+        const sheetObj = sheetLead.objections_logged;
+        const dbObj = existing.objections_logged || [];
+        if (JSON.stringify(sheetObj) !== JSON.stringify(dbObj)) {
+          changes.objections_logged = sheetObj;
+          hasChanges = true;
+        }
+      }
 
       // Sync created_at if sheet date context is different from database created_at
       if (sheetLead.created_context_date) {
@@ -407,6 +451,21 @@ export function diffAndSync(sheetRows, dbLeads) {
             sheetDate.getUTCDate() !== dbDate.getUTCDate()) {
           
           changes.created_at = sheetLead.created_context_date;
+          hasChanges = true;
+        }
+      }
+
+      // Sync enquiry_date if sheet date context is different from database enquiry_date
+      if (sheetLead.enquiry_date) {
+        const sheetDate = new Date(sheetLead.enquiry_date);
+        const dbDate = existing.enquiry_date ? new Date(existing.enquiry_date) : null;
+        
+        if (!dbDate || 
+            sheetDate.getUTCFullYear() !== dbDate.getUTCFullYear() ||
+            sheetDate.getUTCMonth() !== dbDate.getUTCMonth() ||
+            sheetDate.getUTCDate() !== dbDate.getUTCDate()) {
+          
+          changes.enquiry_date = sheetLead.enquiry_date;
           hasChanges = true;
         }
       }

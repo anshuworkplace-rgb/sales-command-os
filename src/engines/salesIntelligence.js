@@ -4,6 +4,8 @@
  * Designed for Indian office (IST), ₹1.5L avg monthly targets, 6-day week (Mon-Sat)
  */
 
+import { parseHinglishFeedback } from './hinglishParser';
+
 const DEFAULT_TARGET = 150000; // ₹1.5 Lakh
 const WORKING_DAYS_PER_MONTH = 26; // 6-day week
 
@@ -404,81 +406,168 @@ export function generateIntelligence(leads, users, getTargetFn = null) {
 
 // ── AI PRIORITY & GUIDANCE ENGINE ──
 export function evaluateLeadPriority(lead) {
-  let score = 0;
-  let action = "Review Lead";
-  let tag = "Neutral";
+  const now = new Date();
   
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  // Parse feedback via Hinglish parser (objections, dispositions, capital, experience)
+  const feedback = parseHinglishFeedback(lead.notes || '', lead.follow_up_note || '');
+  const disposition = lead.disposition || feedback.disposition?.key;
+  const objections = feedback.objections || [];
   
-  // Parse enquiryDate
-  let enqDate = null;
-  if (lead.enquiryDate) {
-    enqDate = new Date(lead.enquiryDate);
-    enqDate.setHours(0,0,0,0);
-  } else if (lead.created_at) {
-    enqDate = new Date(lead.created_at);
-    enqDate.setHours(0,0,0,0);
+  // Base stage flags
+  const isFresh = ['new', 'fresh_enquiry'].includes(lead.status);
+  const isHighIntent = ['demo_done', 'negotiation'].includes(lead.status);
+  const isMidFunnel = ['first_call', 'discovery', 'demo_scheduled'].includes(lead.status);
+  const isWon = ['converted', 'deployed', 'closed_won'].includes(lead.status);
+  const isLost = lead.status === 'lost';
+  
+  // Terminal/archived lead feedback check (NPC, Not Interested, Wrong Inquiry)
+  // These immediately drop the lead to lowest priority, even if they are in the 'fresh_enquiry' status
+  if (disposition && ['npc', 'wrong_inquiry', 'not_interested'].includes(disposition)) {
+    const displayDisp = disposition === 'npc' ? 'Not a Potential Client' : disposition.replace('_', ' ');
+    return {
+      score: 10,
+      action: `Archive: Client marked as ${displayDisp}.`,
+      tag: 'LOW',
+      daysSinceEnquiry: lead.created_at ? Math.floor((now - new Date(lead.created_at)) / 86400000) : 0
+    };
   }
+
+  let score = 50; // base score
+  let action = "Review Lead";
   
-  const daysSinceEnquiry = enqDate ? Math.floor((today - enqDate) / 86400000) : 999;
+  // Parse enquiry date
+  const enqRaw = lead.enquiry_date || lead.enquiryDate || lead.created_at;
+  const enqDate = enqRaw ? new Date(enqRaw) : now;
   
-  // Priority Logic
-  if (lead.status === 'fresh_enquiry') {
-    if (daysSinceEnquiry === 0) {
-      score = 100;
-      action = "Hot lead! Contact immediately today.";
-      tag = "CRITICAL";
-    } else if (daysSinceEnquiry <= 2) {
-      score = 90;
-      action = "Recent enquiry. Follow up urgently.";
-      tag = "HIGH";
+  // Base stage value and actions
+  if (isFresh) {
+    // Untouched checking (no call count, no whatsapp count, no contact timestamp)
+    const isUntouched = !lead.first_contact_at && (lead.call_count || 0) === 0 && (lead.wa_count || 0) === 0;
+    if (isUntouched) {
+      const diffMins = (now - enqDate) / 60000;
+      if (diffMins <= 15) {
+        score = 98; // High priority for brand new fresh untouched leads
+        action = `⚡ NEW ENQUIRY: Touch immediately (SLA target <15m).`;
+      } else {
+        score = 100; // Peak priority for SLA breaches
+        action = `🚨 SLA BREACH: Untouched fresh enquiry for ${Math.round(diffMins)}m! Call now.`;
+      }
     } else {
-      score = 75;
-      action = "Stale enquiry. Try re-engaging.";
-      tag = "MEDIUM";
+      score = 80;
+      action = "Qualification: Follow up on fresh enquiry.";
     }
-  } else if (['demo_done', 'negotiation'].includes(lead.status)) {
-    score = 85;
-    action = "High intent phase. Push for closure.";
-    tag = "HIGH";
-  } else if (lead.status === 'first_call' || lead.status === 'discovery' || lead.status === 'demo_scheduled') {
-    score = 70;
-    action = "Keep momentum. Schedule next touchpoint.";
-    tag = "MEDIUM";
-  } else if (['converted', 'deployed', 'closed_won'].includes(lead.status)) {
+  } else if (isHighIntent) {
+    score = 75;
+    action = "High intent phase. Push for closing proposal.";
+  } else if (isMidFunnel) {
+    score = 65;
+    action = "Nurture lead. Set up demo or follow up.";
+  } else if (isWon) {
     score = 10;
-    action = "Successfully closed. Great job!";
-    tag = "DONE";
-  } else if (lead.status === 'lost') {
+    action = "Deals won. Check system deployment.";
+  } else if (isLost) {
     score = 5;
-    action = "Lost lead. Review feedback to improve.";
-    tag = "LOW";
+    action = "Deal lost. Mark notes for review.";
   } else {
     score = 50;
-    action = "Standard follow-up needed.";
-    tag = "NORMAL";
+    action = "Standard follow-up.";
   }
-  
-  // Apply feedback / follow-up boosts
-  if (lead.next_follow_up) {
-    const fDate = new Date(lead.next_follow_up);
-    fDate.setHours(0,0,0,0);
-    const followUpDiff = Math.floor((fDate - today) / 86400000);
-    
-    if (followUpDiff < 0 && !['converted', 'lost', 'deployed', 'closed_won'].includes(lead.status)) {
-      score += 20; // Overdue
-      action = "OVERDUE FOLLOW-UP: " + action;
-      tag = "URGENT";
-    } else if (followUpDiff === 0 && !['converted', 'lost', 'deployed', 'closed_won'].includes(lead.status)) {
-      score += 15;
-      action = "TODAY'S FOLLOW-UP: " + action;
-      tag = "HIGH";
+
+  // Only apply active data & feedback boosts if the lead is active and not closed
+  if (!isWon && !isLost) {
+    // 1. Trader Profile Capital Factor (Data-driven)
+    const capital = lead.capital_numeric || feedback.capital?.numeric || 0;
+    if (capital >= 500000) {
+      score += 15; // High capital tier boost
+    } else if (capital >= 100000) {
+      score += 10; // Mid capital tier boost
+    } else if (capital >= 50000) {
+      score += 5;  // Low capital tier boost
+    }
+
+    // 2. Trading Experience Factor (Data-driven)
+    const exp = lead.trading_experience || feedback.experience?.[0]?.key;
+    if (['option_trader', 'algo_user', 'pro', 'advanced'].includes(exp)) {
+      score += 10; // High value experienced fit
+    } else if (['intermediate', 'manual_trader'].includes(exp)) {
+      score += 5;  // Medium value fit
+    }
+
+    // 3. Feedback Objection Prescriptive Actions (Feedback-driven)
+    if (objections.length > 0) {
+      score += 10; // Boost priority to address active customer concerns
+      const primaryObjection = objections[0].key;
+      if (primaryObjection === 'too_expensive') {
+        action = "Address Budget: Offer Starter plan at ₹4,999/mo.";
+      } else if (primaryObjection === 'had_losses') {
+        action = "Address Losses: Pitch safe trading under client demat.";
+      } else if (primaryObjection === 'trust_issues') {
+        action = "Address Trust: Share SEBI registration & verified P&L.";
+      } else if (primaryObjection === 'needs_proof') {
+        action = "Provide Proof: Share backtests & live client profits.";
+      } else if (primaryObjection === 'no_time') {
+        action = "Address Time: Explain 100% automated algo execution.";
+      }
+    }
+
+    // 4. Retry adjustments for Busy / Unreachable (Feedback-driven)
+    if (disposition === 'busy' || disposition === 'unreachable') {
+      score -= 15; // De-prioritize slightly to let reachable leads float up
+      action = `Retry: Client was ${disposition.replace('_', ' ')}. Call at different slot.`;
+    }
+
+    // 5. Follow-up Recency & Urgency
+    if (lead.next_follow_up) {
+      const fDate = new Date(lead.next_follow_up);
+      const diffHours = (now - fDate) / 3600000;
+      
+      if (diffHours > 0) {
+        score += 25; // Overdue follow-up boost
+        action = `🚨 OVERDUE [${Math.round(diffHours)}h]: ${action}`;
+      } else if (Math.abs(diffHours) <= 24) {
+        score += 15; // Scheduled for today boost
+        action = `📅 TODAY: ${action}`;
+      }
+    }
+
+    // 6. Inactivity Decay (Deduct points for inactivity, bypass for untouched fresh leads)
+    const lastActiveRaw = lead.last_activity_at || enqRaw;
+    if (lastActiveRaw) {
+      const lastActiveDate = new Date(lastActiveRaw);
+      const hoursInactive = (now - lastActiveDate) / 3600000;
+      const isUntouchedFresh = isFresh && !lead.first_contact_at && (lead.call_count || 0) === 0 && (lead.wa_count || 0) === 0;
+      
+      if (hoursInactive > 24 && !isUntouchedFresh) {
+        const decay = Math.min(15, Math.floor(hoursInactive - 24) * 2);
+        score -= decay;
+      }
     }
   }
 
-  // Cap score
+  // Cap score between 0 and 100
   score = Math.min(100, Math.max(0, score));
+
+  // Determine Tag based on score
+  let tag = "NORMAL";
+  if (score >= 90) {
+    tag = "CRITICAL";
+  } else if (score >= 75) {
+    tag = "URGENT";
+  } else if (score >= 60) {
+    tag = "HIGH";
+  } else if (score >= 40) {
+    tag = "MEDIUM";
+  } else if (score >= 15) {
+    tag = "NORMAL";
+  } else {
+    tag = "LOW";
+  }
+
+  const todayDateOnly = new Date();
+  todayDateOnly.setHours(0,0,0,0);
+  const enqDateOnly = new Date(enqDate);
+  enqDateOnly.setHours(0,0,0,0);
+  const daysSinceEnquiry = Math.floor((todayDateOnly - enqDateOnly) / 86400000);
 
   return { score, action, tag, daysSinceEnquiry };
 }

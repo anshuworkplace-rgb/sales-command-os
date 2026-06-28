@@ -37,13 +37,42 @@ export default function MyPipeline({ userId }) {
               {g.leads.map((lead) => {
                 const temp = calculateTemperature(lead.lead_score || 0);
                 const over = lead.next_follow_up && new Date(lead.next_follow_up) < new Date();
+                
+                // SLA status check
+                let slaPulsingDot = null;
+                if (['new', 'fresh_enquiry'].includes(lead.status)) {
+                  const now = new Date();
+                  const enq = new Date(lead.enquiry_date || lead.created_at);
+                  const diffMins = (now - enq) / 60000;
+                  if (diffMins > 15) {
+                    slaPulsingDot = (
+                      <span 
+                        className="inline-block w-2 h-2 rounded-full bg-coral animate-pulse flex-shrink-0"
+                        style={{ boxShadow: '0 0 8px #f43f5e' }}
+                        title={`SLA Violation: untouched for ${Math.round(diffMins)}m (>15m)`}
+                      />
+                    );
+                  } else {
+                    slaPulsingDot = (
+                      <span 
+                        className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0"
+                        style={{ boxShadow: '0 0 8px #fbbf24' }}
+                        title={`SLA Urgent: untouched for ${Math.round(diffMins)}m (<=15m)`}
+                      />
+                    );
+                  }
+                }
+
                 return (
                   <div key={lead.id} onClick={() => openLeadDetail(lead.id)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 hover:bg-white/[0.03] group ${over ? 'bg-rose/[0.03] border border-rose/10' : 'border border-transparent'}`}>
                     <div className={`w-1 h-8 rounded-full flex-shrink-0 ${temp === 'HOT' ? 'temp-hot' : temp === 'WARM' ? 'temp-warm' : 'temp-cold'}`}
                       style={{ boxShadow: temp === 'HOT' ? '0 0 6px rgba(255,77,106,0.3)' : temp === 'WARM' ? '0 0 6px rgba(255,190,10,0.3)' : '0 0 6px rgba(61,139,253,0.2)' }} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-semibold text-txt-bright truncate">{lead.name}</div>
+                      <div className="text-[12px] font-semibold text-txt-bright truncate flex items-center gap-1.5">
+                        {slaPulsingDot}
+                        <span>{lead.name}</span>
+                      </div>
                       <div className="text-[10px] text-txt-dim font-mono">{lead.phone}</div>
                     </div>
                     <CountdownTimer targetDate={lead.next_follow_up} compact />

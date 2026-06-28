@@ -95,6 +95,7 @@ function onEdit(e) {
     
     if (dateContext) {
       leadData.created_at = dateContext;
+      leadData.enquiry_date = dateContext;
     }
     
     if (ASSIGNED_USER_ID) {
@@ -200,6 +201,7 @@ function syncAllRows() {
     
     if (currentDateContext) {
       leadData.created_at = currentDateContext;
+      leadData.enquiry_date = currentDateContext;
     }
     
     if (ASSIGNED_USER_ID) {

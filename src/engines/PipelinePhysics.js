@@ -11,10 +11,11 @@ export function calculatePipelinePhysics(leads, userId = null) {
     : leads;
 
   // 1. SLA Tracking (Time to first touch)
-  // Time between lead creation and first contact (in minutes)
-  const contactedLeads = filteredLeads.filter(l => l.first_contact_at && l.created_at);
+  // Time between lead creation/enquiry and first contact (in minutes)
+  const contactedLeads = filteredLeads.filter(l => l.first_contact_at && (l.enquiry_date || l.created_at));
   const totalSlaMs = contactedLeads.reduce((acc, l) => {
-    return acc + Math.max(0, new Date(l.first_contact_at) - new Date(l.created_at));
+    const start = new Date(l.enquiry_date || l.created_at);
+    return acc + Math.max(0, new Date(l.first_contact_at) - start);
   }, 0);
   const avgSlaMinutes = contactedLeads.length > 0 ? (totalSlaMs / contactedLeads.length) / 60000 : 0;
 
@@ -31,7 +32,8 @@ export function calculatePipelinePhysics(leads, userId = null) {
   // 4. Sales Cycle Length (Days from creation to closed_won)
   const cycleLengths = closedWon.map(l => {
     // We use last_activity_at as the proxy for the close date if it's closed_won
-    return Math.max(0.1, (new Date(l.last_activity_at) - new Date(l.created_at)) / (1000 * 60 * 60 * 24));
+    const start = new Date(l.enquiry_date || l.created_at);
+    return Math.max(0.1, (new Date(l.last_activity_at) - start) / (1000 * 60 * 60 * 24));
   });
   const avgCycleLengthDays = cycleLengths.length > 0 
     ? cycleLengths.reduce((a, b) => a + b, 0) / cycleLengths.length 
@@ -46,7 +48,8 @@ export function calculatePipelinePhysics(leads, userId = null) {
   const now = new Date();
   const slaViolations = filteredLeads.filter(l => {
     if (l.first_contact_at || l.status === 'lost' || l.status === 'converted') return false;
-    const ageMs = now - new Date(l.created_at);
+    const start = new Date(l.enquiry_date || l.created_at);
+    const ageMs = now - start;
     return ageMs > 15 * 60 * 1000; // 15 mins in MS
   });
 
@@ -58,6 +61,10 @@ export function calculatePipelinePhysics(leads, userId = null) {
     velocity,
     activeOpps,
     slaViolations: slaViolations.length,
-    violatingLeads: slaViolations.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    violatingLeads: slaViolations.sort((a, b) => {
+      const timeA = new Date(a.enquiry_date || a.created_at).getTime();
+      const timeB = new Date(b.enquiry_date || b.created_at).getTime();
+      return timeA - timeB;
+    })
   };
 }

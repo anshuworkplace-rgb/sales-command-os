@@ -4,7 +4,7 @@
  * Designed for Indian office (IST), ₹1.5L avg monthly targets, 6-day week (Mon-Sat)
  */
 
-import { parseHinglishFeedback } from './hinglishParser';
+import { parseHinglishFeedback } from './hinglishParser.js';
 
 const DEFAULT_TARGET = 150000; // ₹1.5 Lakh
 const WORKING_DAYS_PER_MONTH = 26; // 6-day week

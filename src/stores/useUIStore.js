@@ -10,8 +10,8 @@ const getSavedFilters = () => {
 };
 
 const useUIStore = create((set, get) => ({
-  // ── PAGE NAVIGATION ──
-  activePage: 'action-hub', // 'home' | 'action-hub' | 'clients' | 'revenue' | 'intelligence' | 'leaderboard' | 'sheets'
+  // ── PAGE NAVIGATION (3 core views + sheets) ──
+  activePage: 'command', // 'command' | 'pipeline' | 'pulse' | 'sheets'
   setActivePage: (page) => set({ activePage: page }),
 
   // ── SIDEBAR ──
@@ -139,9 +139,9 @@ const useUIStore = create((set, get) => ({
   setMultiSort: (sortConfig) => set({ multiSort: sortConfig, activeSmartFilterId: null }),
 
   // ── Backward compat shims ──
-  activeTab: 'dashboard',
+  activeTab: 'command',
   setActiveTab: (tab) => {
-    const mapping = { dashboard: 'home', today: 'action-hub', coach: 'home', stream: 'action-hub', workspace: 'action-hub' };
+    const mapping = { dashboard: 'command', today: 'command', coach: 'command', stream: 'command', workspace: 'command', home: 'command' };
     set({ activePage: mapping[tab] || tab, activeTab: tab });
   },
 }));
